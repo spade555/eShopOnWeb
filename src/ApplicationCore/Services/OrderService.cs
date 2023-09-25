@@ -1,4 +1,7 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
+using System.Net.Http;
+using System.Text;
 using System.Threading.Tasks;
 using Ardalis.GuardClauses;
 using Microsoft.eShopWeb.ApplicationCore.Entities;
@@ -15,16 +18,19 @@ public class OrderService : IOrderService
     private readonly IUriComposer _uriComposer;
     private readonly IRepository<Basket> _basketRepository;
     private readonly IRepository<CatalogItem> _itemRepository;
+    private readonly HttpClient _httpClient;
 
     public OrderService(IRepository<Basket> basketRepository,
         IRepository<CatalogItem> itemRepository,
         IRepository<Order> orderRepository,
-        IUriComposer uriComposer)
+        IUriComposer uriComposer,
+        HttpClient httpClient)
     {
         _orderRepository = orderRepository;
         _uriComposer = uriComposer;
         _basketRepository = basketRepository;
         _itemRepository = itemRepository;
+        _httpClient = httpClient;
     }
 
     public async Task CreateOrderAsync(int basketId, Address shippingAddress)
@@ -47,6 +53,25 @@ public class OrderService : IOrderService
         }).ToList();
 
         var order = new Order(basket.BuyerId, shippingAddress, items);
+
+        var itemsToOrder =
+            new
+            {
+                id = Guid.NewGuid().ToString(),
+                shippingAddress = $"{order.ShipToAddress.ZipCode} {order.ShipToAddress.Country} {order.ShipToAddress.State} {order.ShipToAddress.Street}",
+                finalPrice = order.OrderItems.Sum(i => i.Units * i.UnitPrice),
+                items = order.OrderItems.Select(i =>
+                    new
+                    {
+                        id = i.ItemOrdered.CatalogItemId,
+                        quantity = i.Units,
+                    }),
+            };
+
+        var json = JsonExtensions.ToJson(itemsToOrder);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        var response = await _httpClient.PostAsync("https://deliveryorderprocessorfunc.azurewebsites.net/api/Function1?code=2hWjSkjLhH84uJA_UUXo2jpxF8Y9kGpkAndGuXzrWzT3AzFuhn3rVw==", content);
 
         await _orderRepository.AddAsync(order);
     }
